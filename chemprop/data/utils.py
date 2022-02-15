@@ -2,6 +2,7 @@ from collections import OrderedDict, defaultdict
 import sys
 import csv
 from logging import Logger
+import multiprocessing
 import pickle
 from random import Random
 from typing import List, Set, Tuple, Union
@@ -568,8 +569,8 @@ def get_data(path: str,
             elif args.bond_descriptors == 'descriptor':
                 bond_descriptors = descriptors
 
-        data = MoleculeDataset([
-            MoleculeDatapoint(
+        args_list = [
+            list(dict(
                 smiles=smiles,
                 targets=targets,
                 atom_targets=all_atom_targets[i] if atom_targets else None,
@@ -589,9 +590,11 @@ def get_data(path: str,
                 raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
                 overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
                 overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
-            ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
-                                            total=len(all_smiles))
-        ])
+            ).values())
+            for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
+     ]
+        with multiprocessing.Pool() as pool:
+            data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
 
     # Filter out invalid SMILES
     if skip_invalid_smiles:
