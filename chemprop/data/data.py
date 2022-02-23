@@ -555,7 +555,7 @@ class MoleculeDataset(Dataset):
         
         :return: A list of lists of booleans indicating whether the targets in those positions are greater-than inequality targets.
         """
-        if not hasattr(self._data[0], 'gt_targets'):
+        if not self._data or not hasattr(self._data[0], 'gt_targets'):
             return None
 
         return [d.gt_targets for d in self._data]
@@ -566,7 +566,7 @@ class MoleculeDataset(Dataset):
         
         :return: A list of lists of booleans indicating whether the targets in those positions are less-than inequality targets.
         """
-        if not hasattr(self._data[0], 'lt_targets'):
+        if not self._data or not hasattr(self._data[0], 'lt_targets'):
             return None
 
         return [d.lt_targets for d in self._data]
