@@ -1,7 +1,9 @@
 import json
 from logging import Logger
 import os
-from typing import Dict, List
+import subprocess
+import sys
+from typing import Dict, List, Tuple
 
 import numpy as np
 import warnings
@@ -18,12 +20,93 @@ from .train import train
 from .loss_functions import get_loss_func
 from chemprop.spectra_utils import normalize_spectra, load_phase_mask
 from chemprop.args import TrainArgs
-from chemprop.constants import MODEL_FILE_NAME
+from chemprop.constants import MODEL_FILE_NAME, TRAIN_LOGGER_NAME
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
 from chemprop.models import MoleculeModel
 from chemprop.nn_utils import param_count, param_count_all
 from chemprop.utils import build_optimizer, build_lr_scheduler, load_checkpoint, makedirs, \
     save_checkpoint, save_smiles_splits, load_frzn_model, multitask_mean
+from chemprop.data import get_task_names, validate_dataset_type
+from chemprop.utils import create_logger, timeit
+from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim, set_explicit_h, set_adding_hs, set_reaction, reset_featurization_parameters
+
+@timeit(logger_name=TRAIN_LOGGER_NAME)
+def prepare_for_training(args: TrainArgs) -> Tuple[float, int, str, MoleculeDataset, Logger]:
+    """
+    Prepares for training.
+
+    :param args: A :class:`~chemprop.args.TrainArgs` object containing arguments for
+                 loading data and training the Chemprop model.
+    :return: A tuple containing an info function, seed, save_dir, data, and logger
+    """
+
+    logger = create_logger(name=TRAIN_LOGGER_NAME, save_dir=args.save_dir, quiet=args.quiet)
+    if logger is not None:
+        debug, info = logger.debug, logger.info
+    else:
+        debug = info = print
+
+    # Initialize relevant variables
+    init_seed = args.seed
+    save_dir = args.save_dir
+    args.task_names = get_task_names(path=args.data_path, smiles_columns=args.smiles_columns,
+                                     target_columns=args.target_columns, ignore_columns=args.ignore_columns)
+
+    # Print command line
+    debug('Command line')
+    debug(f'python {" ".join(sys.argv)}')
+
+    # Print args
+    debug('Args')
+    debug(args)
+
+    # Save args
+    makedirs(args.save_dir)
+    try:
+        args.save(os.path.join(args.save_dir, 'args.json'))
+    except subprocess.CalledProcessError:
+        debug('Could not write the reproducibility section of the arguments to file, thus omitting this section.')
+        args.save(os.path.join(args.save_dir, 'args.json'), with_reproducibility=False)
+
+    # set explicit H option and reaction option
+    reset_featurization_parameters(logger=logger)
+    set_explicit_h(args.explicit_h)
+    set_adding_hs(args.adding_h)
+    set_keeping_atom_map(args.keeping_atom_map)
+    if args.reaction:
+        set_reaction(args.reaction, args.reaction_mode)
+    elif args.reaction_solvent:
+        set_reaction(True, args.reaction_mode)
+    
+    # Get data
+    debug('Loading data')
+    data = get_data(
+        path=args.data_path,
+        args=args,
+        logger=logger,
+        skip_none_targets=True,
+        data_weights_path=args.data_weights_path
+    )
+    validate_dataset_type(data, dataset_type=args.dataset_type)
+    args.features_size = data.features_size()
+
+    if args.atom_descriptors == 'descriptor':
+        args.atom_descriptors_size = data.atom_descriptors_size()
+    elif args.atom_descriptors == 'feature':
+        args.atom_features_size = data.atom_features_size()
+        set_extra_atom_fdim(args.atom_features_size)
+    if args.bond_descriptors == 'descriptor':
+        args.bond_descriptors_size = data.bond_descriptors_size()
+    elif args.bond_descriptors == 'feature':
+        args.bond_features_size = data.bond_features_size()
+        set_extra_bond_fdim(args.bond_features_size)
+
+    debug(f'Number of tasks = {args.num_tasks}')
+
+    if args.target_weights is not None and len(args.target_weights) != args.num_tasks:
+        raise ValueError('The number of provided target weights must match the number and order of the prediction tasks')
+
+    return info, init_seed, save_dir, data, logger
 
 
 def run_training(args: TrainArgs,

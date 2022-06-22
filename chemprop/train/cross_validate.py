@@ -3,14 +3,12 @@ import csv
 import json
 from logging import Logger
 import os
-import sys
 from typing import Callable, Dict, List, Tuple
-import subprocess
 
 import numpy as np
 import pandas as pd
 
-from .run_training import run_training
+from .run_training import prepare_for_training, run_training
 from chemprop.args import TrainArgs
 from chemprop.constants import TEST_SCORES_FILE_NAME, TRAIN_LOGGER_NAME
 from chemprop.data import get_data, get_task_names, MoleculeDataset, validate_dataset_type
@@ -33,72 +31,8 @@ def cross_validate(args: TrainArgs,
     :param train_func: Function which runs training.
     :return: A tuple containing the mean and standard deviation performance across folds.
     """
-    logger = create_logger(name=TRAIN_LOGGER_NAME, save_dir=args.save_dir, quiet=args.quiet)
-    if logger is not None:
-        debug, info = logger.debug, logger.info
-    else:
-        debug = info = print
-
-    # Initialize relevant variables
-    init_seed = args.seed
-    save_dir = args.save_dir
-    args.task_names = get_task_names(path=args.data_path, smiles_columns=args.smiles_columns,
-                                     target_columns=args.target_columns, ignore_columns=args.ignore_columns)
-
-    # Print command line
-    debug('Command line')
-    debug(f'python {" ".join(sys.argv)}')
-
-    # Print args
-    debug('Args')
-    debug(args)
-
-    # Save args
-    makedirs(args.save_dir)
-    try:
-        args.save(os.path.join(args.save_dir, 'args.json'))
-    except subprocess.CalledProcessError:
-        debug('Could not write the reproducibility section of the arguments to file, thus omitting this section.')
-        args.save(os.path.join(args.save_dir, 'args.json'), with_reproducibility=False)
-
-    # set explicit H option and reaction option
-    reset_featurization_parameters(logger=logger)
-    set_explicit_h(args.explicit_h)
-    set_adding_hs(args.adding_h)
-    set_keeping_atom_map(args.keeping_atom_map)
-    if args.reaction:
-        set_reaction(args.reaction, args.reaction_mode)
-    elif args.reaction_solvent:
-        set_reaction(True, args.reaction_mode)
     
-    # Get data
-    debug('Loading data')
-    data = get_data(
-        path=args.data_path,
-        args=args,
-        logger=logger,
-        skip_none_targets=True,
-        data_weights_path=args.data_weights_path
-    )
-    validate_dataset_type(data, dataset_type=args.dataset_type)
-    args.features_size = data.features_size()
-
-    if args.atom_descriptors == 'descriptor':
-        args.atom_descriptors_size = data.atom_descriptors_size()
-    elif args.atom_descriptors == 'feature':
-        args.atom_features_size = data.atom_features_size()
-        set_extra_atom_fdim(args.atom_features_size)
-    if args.bond_descriptors == 'descriptor':
-        args.bond_descriptors_size = data.bond_descriptors_size()
-    elif args.bond_descriptors == 'feature':
-        args.bond_features_size = data.bond_features_size()
-        set_extra_bond_fdim(args.bond_features_size)
-
-    debug(f'Number of tasks = {args.num_tasks}')
-
-    if args.target_weights is not None and len(args.target_weights) != args.num_tasks:
-        raise ValueError('The number of provided target weights must match the number and order of the prediction tasks')
-
+    info, init_seed, save_dir, data, logger = prepare_for_training(args)
     # Run training on different random seeds for each fold
     all_scores = defaultdict(list)
     for fold_num in range(args.num_folds):

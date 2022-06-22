@@ -9,6 +9,7 @@ from .molecule_fingerprint import chemprop_fingerprint, model_fingerprint
 from .predict import predict
 from .run_training import run_training
 from .train import train
+from .train_endpoint import train_only
 
 __all__ = [
     'chemprop_train',
@@ -26,6 +27,7 @@ __all__ = [
     'predict',
     'run_training',
     'train',
+    'train_only',
     'get_metric_func',
     'prc_auc',
     'bce',
