@@ -357,7 +357,8 @@ def get_data(path: str,
              store_row: bool = False,
              logger: Logger = None,
              loss_function: str = None,
-             skip_none_targets: bool = False) -> MoleculeDataset:
+             skip_none_targets: bool = False,
+             multiprocess : bool = False) -> MoleculeDataset:
     """
     Gets SMILES and target values from a CSV file.
 
@@ -568,33 +569,58 @@ def get_data(path: str,
                 bond_features = descriptors
             elif args.bond_descriptors == 'descriptor':
                 bond_descriptors = descriptors
-
-        args_list = [
-            list(dict(
-                smiles=smiles,
-                targets=targets,
-                atom_targets=all_atom_targets[i] if atom_targets else None,
-                bond_targets=all_bond_targets[i] if bond_targets else None,
-                row=all_rows[i] if store_row else None,
-                data_weight=all_weights[i] if data_weights is not None else None,
-                gt_targets=all_gt[i] if gt_targets is not None else None,
-                lt_targets=all_lt[i] if lt_targets is not None else None,
-                features_generator=features_generator,
-                features=all_features[i] if features_data is not None else None,
-                phase_features=all_phase_features[i] if phase_features is not None else None,
-                atom_features=atom_features[i] if atom_features is not None else None,
-                atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
-                bond_features=bond_features[i] if bond_features is not None else None,
-                bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
-                constraints=all_constraints_data[i] if constraints_data is not None else None,
-                raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
-                overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
-                overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
-            ).values())
-            for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
-     ]
-        with multiprocessing.Pool() as pool:
-            data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
+        if multiprocess:
+            args_list = [
+                list(dict(
+                    smiles=smiles,
+                    targets=targets,
+                    atom_targets=all_atom_targets[i] if atom_targets else None,
+                    bond_targets=all_bond_targets[i] if bond_targets else None,
+                    row=all_rows[i] if store_row else None,
+                    data_weight=all_weights[i] if data_weights is not None else None,
+                    gt_targets=all_gt[i] if gt_targets is not None else None,
+                    lt_targets=all_lt[i] if lt_targets is not None else None,
+                    features_generator=features_generator,
+                    features=all_features[i] if features_data is not None else None,
+                    phase_features=all_phase_features[i] if phase_features is not None else None,
+                    atom_features=atom_features[i] if atom_features is not None else None,
+                    atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
+                    bond_features=bond_features[i] if bond_features is not None else None,
+                    bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
+                    constraints=all_constraints_data[i] if constraints_data is not None else None,
+                    raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
+                    overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
+                    overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
+                ).values())
+                for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
+        ]
+            with multiprocessing.Pool() as pool:
+                data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
+        else:
+            data = MoleculeDataset([
+                MoleculeDatapoint(
+                    smiles=smiles,
+                    targets=targets,
+                    atom_targets=all_atom_targets[i] if atom_targets else None,
+                    bond_targets=all_bond_targets[i] if bond_targets else None,
+                    row=all_rows[i] if store_row else None,
+                    data_weight=all_weights[i] if data_weights is not None else None,
+                    gt_targets=all_gt[i] if gt_targets is not None else None,
+                    lt_targets=all_lt[i] if lt_targets is not None else None,
+                    features_generator=features_generator,
+                    features=all_features[i] if features_data is not None else None,
+                    phase_features=all_phase_features[i] if phase_features is not None else None,
+                    atom_features=atom_features[i] if atom_features is not None else None,
+                    atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
+                    bond_features=bond_features[i] if bond_features is not None else None,
+                    bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
+                    constraints=all_constraints_data[i] if constraints_data is not None else None,
+                    raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
+                    overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
+                    overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
+                ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
+                                                total=len(all_smiles))
+            ])
 
     # Filter out invalid SMILES
     if skip_invalid_smiles:
