@@ -1017,6 +1017,8 @@ class FingerprintArgs(PredictArgs):
 
     fingerprint_type: Literal['MPN', 'last_FFN'] = 'MPN'
     """Choice of which type of latent fingerprint vector to use. Default is the output of the MPNN, excluding molecular features"""
+    save_predictions: bool = True
+    """Whether to save predictions to a CSV file."""
 
 
 class HyperoptArgs(TrainArgs):
