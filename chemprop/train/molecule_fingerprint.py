@@ -131,7 +131,7 @@ def molecule_fingerprint(args: FingerprintArgs,
             fingerprint_type=args.fingerprint_type
         )
         if args.fingerprint_type == 'MPN' and (args.features_path is not None or args.features_generator): # truncate any features from MPN fingerprint
-            model_fp = np.array(model_fp)[:,:total_fp_size] 
+            model_fp = model_fp[:,:total_fp_size] 
         all_fingerprints[:,:,index] = model_fp
 
     if args.save_predictions:    
@@ -190,7 +190,7 @@ def molecule_fingerprint(args: FingerprintArgs,
 def model_fingerprint(model: MoleculeModel,
             data_loader: MoleculeDataLoader,
             fingerprint_type: str = 'MPN',
-            disable_progress_bar: bool = False) -> List[List[float]]:
+            disable_progress_bar: bool = False) -> torch.Tensor:
     """
     Encodes the provided molecules into the latent fingerprint vectors, according to the provided model.
 
@@ -215,11 +215,9 @@ def model_fingerprint(model: MoleculeModel,
                                          atom_features_batch, bond_descriptors_batch,
                                          bond_features_batch, fingerprint_type)
 
-        # Collect vectors
-        batch_fp = batch_fp.data.cpu().tolist()
-
-        fingerprints.extend(batch_fp)
-
+        fingerprints.append(batch_fp)
+    # Collect vectors
+    fingerprints = torch.cat(fingerprints).cpu()
     return fingerprints
 
 def chemprop_fingerprint() -> None:
