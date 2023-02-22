@@ -12,6 +12,7 @@ import json
 from rdkit import Chem
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from .data import MoleculeDatapoint, MoleculeDataset, make_mols
@@ -29,8 +30,13 @@ def get_header(path: str) -> List[str]:
     :param path: Path to a CSV file.
     :return: A list of strings containing the strings in the comma-separated header.
     """
-    with open(path) as f:
-        header = next(csv.reader(f))
+    if path.endswith(".csv"):
+        with open(path) as f:
+            header = next(csv.reader(f))
+    elif path.endswith(".parquet"):
+
+        schema = pq.read_schema(path)
+        header = schema.names
 
     return header
 
@@ -465,162 +471,175 @@ def get_data(path: str,
         gt_targets, lt_targets = None, None
 
     # Load data
-    with open(path) as f:
+    if path.endswith(".csv"):
+        f = open(path)
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
-        if any([c not in fieldnames for c in smiles_columns]):
-            raise ValueError(f'Data file did not contain all provided smiles columns: {smiles_columns}. Data file field names are: {fieldnames}')
-        if any([c not in fieldnames for c in target_columns]):
-            raise ValueError(f'Data file did not contain all provided target columns: {target_columns}. Data file field names are: {fieldnames}')
+        enumeration = tqdm(enumerate(reader))
+    elif path.endswith(".parquet"):
+        df = pd.read_parquet(path)
+        df = df[smiles_columns + target_columns]
+        # enumeration = tqdm(df.iterrows(), total=len(df))
+        enumeration = tqdm(enumerate(df.to_dict(orient="records")), total=len(df))#, mininterval=0.5)
+        schema = pq.read_schema(path)
+        fieldnames = schema.names
 
-        all_smiles, all_targets, all_atom_targets, all_bond_targets, all_rows, all_features, all_phase_features, all_constraints_data, all_raw_constraints_data, all_weights, all_gt, all_lt = [], [], [], [], [], [], [], [], [], [], [], []
-        for i, row in enumerate(tqdm(reader)):
-            smiles = [row[c] for c in smiles_columns]
+    if any([c not in fieldnames for c in smiles_columns]):
+        raise ValueError(f'Data file did not contain all provided smiles columns: {smiles_columns}. Data file field names are: {fieldnames}')
+    if any([c not in fieldnames for c in target_columns]):
+        raise ValueError(f'Data file did not contain all provided target columns: {target_columns}. Data file field names are: {fieldnames}')
 
-            targets, atom_targets, bond_targets = [], [], []
-            for column in target_columns:
-                value = row[column]
-                if value in ['', 'nan']:
-                    targets.append(None)
-                elif '>' in value or '<' in value:
-                    if loss_function == 'bounded_mse':
-                        targets.append(float(value.strip('<>')))
-                    else:
-                        raise ValueError('Inequality found in target data. To use inequality targets (> or <), the regression loss function bounded_mse must be used.')
-                elif '[' in value or ']' in value:
-                    value = value.replace('None', 'null')
-                    target = np.array(json.loads(value))
-                    if len(target.shape) == 1 and column in args.atom_targets:  # Atom targets saved as 1D list
-                        atom_targets.append(target)
-                        targets.append(target)
-                    elif len(target.shape) == 1 and column in args.bond_targets:  # Bond targets saved as 1D list
-                        bond_targets.append(target)
-                        targets.append(target)
-                    elif len(target.shape) == 2:  # Bond targets saved as 2D list
-                        bond_target_arranged = []
-                        mol = make_mol(smiles[0], args.explicit_h, args.adding_h, args.keeping_atom_map)
-                        for bond in mol.GetBonds():
-                            bond_target_arranged.append(target[bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx()])
-                        bond_targets.append(np.array(bond_target_arranged))
-                        targets.append(np.array(bond_target_arranged))
-                    else:
-                        raise ValueError(f'Unrecognized targets of column {column} in {path}.')
+    all_smiles, all_targets, all_atom_targets, all_bond_targets, all_rows, all_features, all_phase_features, all_constraints_data, all_raw_constraints_data, all_weights, all_gt, all_lt = [], [], [], [], [], [], [], [], [], [], [], []
+    for i, row in enumeration:
+        smiles = [row[c] for c in smiles_columns]
+
+        targets, atom_targets, bond_targets = [], [], []
+        for column in target_columns:
+            value = row[column]
+            if value in ['', 'nan']:
+                targets.append(None)
+            elif '>' in value or '<' in value:
+                if loss_function == 'bounded_mse':
+                    targets.append(float(value.strip('<>')))
                 else:
-                    targets.append(float(value))
+                    raise ValueError('Inequality found in target data. To use inequality targets (> or <), the regression loss function bounded_mse must be used.')
+            elif '[' in value or ']' in value:
+                value = value.replace('None', 'null')
+                target = np.array(json.loads(value))
+                if len(target.shape) == 1 and column in args.atom_targets:  # Atom targets saved as 1D list
+                    atom_targets.append(target)
+                    targets.append(target)
+                elif len(target.shape) == 1 and column in args.bond_targets:  # Bond targets saved as 1D list
+                    bond_targets.append(target)
+                    targets.append(target)
+                elif len(target.shape) == 2:  # Bond targets saved as 2D list
+                    bond_target_arranged = []
+                    mol = make_mol(smiles[0], args.explicit_h, args.adding_h, args.keeping_atom_map)
+                    for bond in mol.GetBonds():
+                        bond_target_arranged.append(target[bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx()])
+                    bond_targets.append(np.array(bond_target_arranged))
+                    targets.append(np.array(bond_target_arranged))
+                else:
+                    raise ValueError(f'Unrecognized targets of column {column} in {path}.')
+            else:
+                targets.append(float(value))
 
-            # Check whether all targets are None and skip if so
-            if skip_none_targets and all(x is None for x in targets):
-                continue
+        # Check whether all targets are None and skip if so
+        if skip_none_targets and all(x is None for x in targets):
+            continue
 
-            all_smiles.append(smiles)
-            all_targets.append(targets)
-            all_atom_targets.append(atom_targets)
-            all_bond_targets.append(bond_targets)
+        all_smiles.append(smiles)
+        all_targets.append(targets)
+        all_atom_targets.append(atom_targets)
+        all_bond_targets.append(bond_targets)
 
-            if features_data is not None:
-                all_features.append(features_data[i])
+        if features_data is not None:
+            all_features.append(features_data[i])
 
-            if phase_features is not None:
-                all_phase_features.append(phase_features[i])
+        if phase_features is not None:
+            all_phase_features.append(phase_features[i])
 
-            if constraints_data is not None:
-                all_constraints_data.append(constraints_data[i])
+        if constraints_data is not None:
+            all_constraints_data.append(constraints_data[i])
 
-            if raw_constraints_data is not None:
-                all_raw_constraints_data.append(raw_constraints_data[i])
+        if raw_constraints_data is not None:
+            all_raw_constraints_data.append(raw_constraints_data[i])
 
-            if data_weights is not None:
-                all_weights.append(data_weights[i])
+        if data_weights is not None:
+            all_weights.append(data_weights[i])
 
-            if gt_targets is not None:
-                all_gt.append(gt_targets[i])
+        if gt_targets is not None:
+            all_gt.append(gt_targets[i])
 
-            if lt_targets is not None:
-                all_lt.append(lt_targets[i])
+        if lt_targets is not None:
+            all_lt.append(lt_targets[i])
 
-            if store_row:
-                all_rows.append(row)
+        if store_row:
+            all_rows.append(row)
 
-            if len(all_smiles) >= max_data_size:
-                break
+        if len(all_smiles) >= max_data_size:
+            break
 
-        atom_features = None
-        atom_descriptors = None
-        if args is not None and args.atom_descriptors is not None:
-            try:
-                descriptors = load_valid_atom_or_bond_features(atom_descriptors_path, [x[0] for x in all_smiles])
-            except Exception as e:
-                raise ValueError(f'Failed to load or validate custom atomic descriptors or features: {e}')
+    atom_features = None
+    atom_descriptors = None
+    if args is not None and args.atom_descriptors is not None:
+        try:
+            descriptors = load_valid_atom_or_bond_features(atom_descriptors_path, [x[0] for x in all_smiles])
+        except Exception as e:
+            raise ValueError(f'Failed to load or validate custom atomic descriptors or features: {e}')
 
-            if args.atom_descriptors == 'feature':
-                atom_features = descriptors
-            elif args.atom_descriptors == 'descriptor':
-                atom_descriptors = descriptors
+        if args.atom_descriptors == 'feature':
+            atom_features = descriptors
+        elif args.atom_descriptors == 'descriptor':
+            atom_descriptors = descriptors
 
-        bond_features = None
-        bond_descriptors = None
-        if args is not None and args.bond_descriptors is not None:
-            try:
-                descriptors = load_valid_atom_or_bond_features(bond_descriptors_path, [x[0] for x in all_smiles])
-            except Exception as e:
-                raise ValueError(f'Failed to load or validate custom bond descriptors or features: {e}')
+    bond_features = None
+    bond_descriptors = None
+    if args is not None and args.bond_descriptors is not None:
+        try:
+            descriptors = load_valid_atom_or_bond_features(bond_descriptors_path, [x[0] for x in all_smiles])
+        except Exception as e:
+            raise ValueError(f'Failed to load or validate custom bond descriptors or features: {e}')
 
-            if args.bond_descriptors == 'feature':
-                bond_features = descriptors
-            elif args.bond_descriptors == 'descriptor':
-                bond_descriptors = descriptors
-        if multiprocess:
-            args_list = [
-                list(dict(
-                    smiles=smiles,
-                    targets=targets,
-                    atom_targets=all_atom_targets[i] if atom_targets else None,
-                    bond_targets=all_bond_targets[i] if bond_targets else None,
-                    row=all_rows[i] if store_row else None,
-                    data_weight=all_weights[i] if data_weights is not None else None,
-                    gt_targets=all_gt[i] if gt_targets is not None else None,
-                    lt_targets=all_lt[i] if lt_targets is not None else None,
-                    features_generator=features_generator,
-                    features=all_features[i] if features_data is not None else None,
-                    phase_features=all_phase_features[i] if phase_features is not None else None,
-                    atom_features=atom_features[i] if atom_features is not None else None,
-                    atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
-                    bond_features=bond_features[i] if bond_features is not None else None,
-                    bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
-                    constraints=all_constraints_data[i] if constraints_data is not None else None,
-                    raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
-                    overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
-                    overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
-                ).values())
-                for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
-        ]
-            with multiprocessing.Pool() as pool:
-                data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
-        else:
-            data = MoleculeDataset([
-                MoleculeDatapoint(
-                    smiles=smiles,
-                    targets=targets,
-                    atom_targets=all_atom_targets[i] if atom_targets else None,
-                    bond_targets=all_bond_targets[i] if bond_targets else None,
-                    row=all_rows[i] if store_row else None,
-                    data_weight=all_weights[i] if data_weights is not None else None,
-                    gt_targets=all_gt[i] if gt_targets is not None else None,
-                    lt_targets=all_lt[i] if lt_targets is not None else None,
-                    features_generator=features_generator,
-                    features=all_features[i] if features_data is not None else None,
-                    phase_features=all_phase_features[i] if phase_features is not None else None,
-                    atom_features=atom_features[i] if atom_features is not None else None,
-                    atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
-                    bond_features=bond_features[i] if bond_features is not None else None,
-                    bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
-                    constraints=all_constraints_data[i] if constraints_data is not None else None,
-                    raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
-                    overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
-                    overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
-                ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
-                                                total=len(all_smiles))
-            ])
+        if args.bond_descriptors == 'feature':
+            bond_features = descriptors
+        elif args.bond_descriptors == 'descriptor':
+            bond_descriptors = descriptors
+    if multiprocess:
+        args_list = [
+            list(dict(
+                smiles=smiles,
+                targets=targets,
+                atom_targets=all_atom_targets[i] if atom_targets else None,
+                bond_targets=all_bond_targets[i] if bond_targets else None,
+                row=all_rows[i] if store_row else None,
+                data_weight=all_weights[i] if data_weights is not None else None,
+                gt_targets=all_gt[i] if gt_targets is not None else None,
+                lt_targets=all_lt[i] if lt_targets is not None else None,
+                features_generator=features_generator,
+                features=all_features[i] if features_data is not None else None,
+                phase_features=all_phase_features[i] if phase_features is not None else None,
+                atom_features=atom_features[i] if atom_features is not None else None,
+                atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
+                bond_features=bond_features[i] if bond_features is not None else None,
+                bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
+                constraints=all_constraints_data[i] if constraints_data is not None else None,
+                raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
+                overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
+                overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
+            ).values())
+            for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
+    ]
+        with multiprocessing.Pool() as pool:
+            data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
+    else:
+        data = MoleculeDataset([
+            MoleculeDatapoint(
+                smiles=smiles,
+                targets=targets,
+                atom_targets=all_atom_targets[i] if atom_targets else None,
+                bond_targets=all_bond_targets[i] if bond_targets else None,
+                row=all_rows[i] if store_row else None,
+                data_weight=all_weights[i] if data_weights is not None else None,
+                gt_targets=all_gt[i] if gt_targets is not None else None,
+                lt_targets=all_lt[i] if lt_targets is not None else None,
+                features_generator=features_generator,
+                features=all_features[i] if features_data is not None else None,
+                phase_features=all_phase_features[i] if phase_features is not None else None,
+                atom_features=atom_features[i] if atom_features is not None else None,
+                atom_descriptors=atom_descriptors[i] if atom_descriptors is not None else None,
+                bond_features=bond_features[i] if bond_features is not None else None,
+                bond_descriptors=bond_descriptors[i] if bond_descriptors is not None else None,
+                constraints=all_constraints_data[i] if constraints_data is not None else None,
+                raw_constraints=all_raw_constraints_data[i] if raw_constraints_data is not None else None,
+                overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
+                overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
+            ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
+                                            total=len(all_smiles))
+        ])
+
+    if path.endswith(".csv"):
+        f.close()
 
     # Filter out invalid SMILES
     if skip_invalid_smiles:
