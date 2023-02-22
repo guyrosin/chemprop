@@ -864,7 +864,7 @@ class PredictArgs(CommonArgs):
 
     test_path: str
     """Path to CSV file containing testing data for which predictions will be made."""
-    preds_path: str
+    preds_path: str = None
     """Path to CSV or PICKLE file where predictions will be saved."""
     drop_extra_columns: bool = False
     """Whether to drop all columns from the test data file besides the SMILES columns and the new prediction columns."""
@@ -1017,8 +1017,6 @@ class FingerprintArgs(PredictArgs):
 
     fingerprint_type: Literal['MPN', 'last_FFN'] = 'MPN'
     """Choice of which type of latent fingerprint vector to use. Default is the output of the MPNN, excluding molecular features"""
-    save_predictions: bool = True
-    """Whether to save predictions to a CSV file."""
 
 
 class HyperoptArgs(TrainArgs):

@@ -134,7 +134,7 @@ def molecule_fingerprint(args: FingerprintArgs,
             model_fp = model_fp[:,:total_fp_size] 
         all_fingerprints[:,:,index] = model_fp
 
-    if args.save_predictions:    
+    if args.preds_path:    
         # Save predictions
         print(f'Saving predictions to {args.preds_path}')
         # assert len(test_data) == len(all_fingerprints) #TODO: add unit test for this
