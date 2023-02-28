@@ -180,10 +180,10 @@ def molecule_fingerprint(args: FingerprintArgs,
                 writer.writerow(datapoint.row)
 
     if return_invalid_smiles:
-        full_fingerprints = np.zeros((len(full_data), total_fp_size, len(args.checkpoint_paths)), dtype='object')
+        full_fingerprints = np.zeros((len(full_data), total_fp_size, len(args.checkpoint_paths)))
         for full_index in range(len(full_data)):
             valid_index = full_to_valid_indices.get(full_index, None)
-            preds = all_fingerprints[valid_index] if valid_index is not None else np.full((total_fp_size, len(args.checkpoint_paths)), 'Invalid SMILES')
+            preds = all_fingerprints[valid_index] if valid_index is not None else np.full((total_fp_size, len(args.checkpoint_paths)), np.nan)
             full_fingerprints[full_index] = preds
         return full_fingerprints
     else:
