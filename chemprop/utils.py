@@ -144,15 +144,15 @@ def load_checkpoint(
                 f"model parameter of shape {model_state_dict[param_name].shape}."
             )
         else:
-            debug(f'Loading pretrained parameter "{loaded_param_name}".')
+            # debug(f'Loading pretrained parameter "{loaded_param_name}".')
             pretrained_state_dict[param_name] = loaded_state_dict[loaded_param_name]
 
     # Load pretrained weights
     model_state_dict.update(pretrained_state_dict)
     model.load_state_dict(model_state_dict)
 
-    if args.cuda:
-        debug("Moving model to cuda")
+    # if args.cuda:
+    #     debug("Moving model to cuda")
     model = model.to(args.device)
 
     return model

@@ -26,7 +26,7 @@ def molecule_fingerprint(args: FingerprintArgs,
     :return: A list of fingerprint vectors (list of floats)
     """
 
-    print('Loading training args')
+    # print('Loading training args')
     train_args = load_args(args.checkpoint_paths[0])
 
     # Update args with training arguments
@@ -53,7 +53,7 @@ def molecule_fingerprint(args: FingerprintArgs,
     elif train_args.reaction_solvent:
         set_reaction(True, train_args.reaction_mode)
 
-    print('Loading data')
+    # print('Loading data')
     if smiles is not None:
         full_data = get_data_from_smiles(
             smiles=smiles,
@@ -64,7 +64,7 @@ def molecule_fingerprint(args: FingerprintArgs,
         full_data = get_data(path=args.test_path, smiles_columns=args.smiles_columns, target_columns=[], ignore_columns=[], skip_invalid_smiles=False,
                              args=args, store_row=True)
 
-    print('Validating SMILES')
+    # print('Validating SMILES')
     full_to_valid_indices = {}
     valid_index = 0
     for full_index in range(len(full_data)):
@@ -78,7 +78,7 @@ def molecule_fingerprint(args: FingerprintArgs,
     if len(test_data) == 0:
         return [None] * len(full_data)
 
-    print(f'Test size = {len(test_data):,}')
+    # print(f'Test size = {len(test_data):,}')
 
     # Create data loader
     test_data_loader = MoleculeDataLoader(
@@ -108,7 +108,7 @@ def molecule_fingerprint(args: FingerprintArgs,
     all_fingerprints = np.zeros((len(test_data), total_fp_size, len(args.checkpoint_paths)))
 
     # Load model
-    print(f'Encoding smiles into a fingerprint vector from {len(args.checkpoint_paths)} models.')
+    # print(f'Encoding smiles into a fingerprint vector from {len(args.checkpoint_paths)} models.')
 
     for index, checkpoint_path in enumerate(args.checkpoint_paths):
         if len(args.checkpoint_paths) > 1:

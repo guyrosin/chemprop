@@ -475,12 +475,12 @@ def get_data(path: str,
         f = open(path)
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
-        enumeration = tqdm(enumerate(reader))
+        enumeration = tqdm(enumerate(reader), desc="Reading data")
     elif path.endswith(".parquet"):
         df = pd.read_parquet(path)
         df = df[smiles_columns + target_columns]
         # enumeration = tqdm(df.iterrows(), total=len(df))
-        enumeration = tqdm(enumerate(df.to_dict(orient="records")), total=len(df))#, mininterval=0.5)
+        enumeration = tqdm(enumerate(df.to_dict(orient="records")), total=len(df), desc="Reading data")#, mininterval=0.5)
         schema = pq.read_schema(path)
         fieldnames = schema.names
 
@@ -611,7 +611,7 @@ def get_data(path: str,
             for i, (smiles, targets) in enumerate(zip(all_smiles, all_targets))
     ]
         with multiprocessing.Pool() as pool:
-            data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list))))
+            data = MoleculeDataset(pool.starmap(MoleculeDatapoint, tqdm(args_list, total=len(args_list), desc="Processing data")))
     else:
         data = MoleculeDataset([
             MoleculeDatapoint(
@@ -635,7 +635,7 @@ def get_data(path: str,
                 overwrite_default_atom_features=args.overwrite_default_atom_features if args is not None else False,
                 overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
             ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
-                                            total=len(all_smiles))
+                                            total=len(all_smiles), desc="Processing data")
         ])
 
     if path.endswith(".csv"):
