@@ -56,11 +56,11 @@ def reset_featurization_parameters(logger: logging.Logger = None) -> None:
     """
     Function resets feature parameter values to defaults by replacing the parameters instance.
     """
-    if logger is not None:
-        debug = logger.debug
-    else:
-        debug = print
-    debug('Setting molecule featurization parameters to default.')
+    # if logger is not None:
+    #     debug = logger.debug
+    # else:
+    #     debug = print
+    # debug('Setting molecule featurization parameters to default.')
     global PARAMS
     PARAMS = Featurization_parameters()
 

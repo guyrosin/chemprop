@@ -34,7 +34,6 @@ def get_header(path: str) -> List[str]:
         with open(path) as f:
             header = next(csv.reader(f))
     elif path.endswith(".parquet"):
-
         schema = pq.read_schema(path)
         header = schema.names
 
@@ -496,31 +495,34 @@ def get_data(path: str,
         targets, atom_targets, bond_targets = [], [], []
         for column in target_columns:
             value = row[column]
-            if value in ['', 'nan']:
-                targets.append(None)
-            elif '>' in value or '<' in value:
-                if loss_function == 'bounded_mse':
-                    targets.append(float(value.strip('<>')))
+            if isinstance(value, str):
+                if value in ['', 'nan']:
+                    targets.append(None)
+                elif '>' in value or '<' in value:
+                    if loss_function == 'bounded_mse':
+                        targets.append(float(value.strip('<>')))
+                    else:
+                        raise ValueError('Inequality found in target data. To use inequality targets (> or <), the regression loss function bounded_mse must be used.')
+                elif '[' in value or ']' in value:
+                    value = value.replace('None', 'null')
+                    target = np.array(json.loads(value))
+                    if len(target.shape) == 1 and column in args.atom_targets:  # Atom targets saved as 1D list
+                        atom_targets.append(target)
+                        targets.append(target)
+                    elif len(target.shape) == 1 and column in args.bond_targets:  # Bond targets saved as 1D list
+                        bond_targets.append(target)
+                        targets.append(target)
+                    elif len(target.shape) == 2:  # Bond targets saved as 2D list
+                        bond_target_arranged = []
+                        mol = make_mol(smiles[0], args.explicit_h, args.adding_h, args.keeping_atom_map)
+                        for bond in mol.GetBonds():
+                            bond_target_arranged.append(target[bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx()])
+                        bond_targets.append(np.array(bond_target_arranged))
+                        targets.append(np.array(bond_target_arranged))
+                    else:
+                        raise ValueError(f'Unrecognized targets of column {column} in {path}.')
                 else:
-                    raise ValueError('Inequality found in target data. To use inequality targets (> or <), the regression loss function bounded_mse must be used.')
-            elif '[' in value or ']' in value:
-                value = value.replace('None', 'null')
-                target = np.array(json.loads(value))
-                if len(target.shape) == 1 and column in args.atom_targets:  # Atom targets saved as 1D list
-                    atom_targets.append(target)
-                    targets.append(target)
-                elif len(target.shape) == 1 and column in args.bond_targets:  # Bond targets saved as 1D list
-                    bond_targets.append(target)
-                    targets.append(target)
-                elif len(target.shape) == 2:  # Bond targets saved as 2D list
-                    bond_target_arranged = []
-                    mol = make_mol(smiles[0], args.explicit_h, args.adding_h, args.keeping_atom_map)
-                    for bond in mol.GetBonds():
-                        bond_target_arranged.append(target[bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx()])
-                    bond_targets.append(np.array(bond_target_arranged))
-                    targets.append(np.array(bond_target_arranged))
-                else:
-                    raise ValueError(f'Unrecognized targets of column {column} in {path}.')
+                    targets.append(float(value))
             else:
                 targets.append(float(value))
 
