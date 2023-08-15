@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Tuple
+from typing import Dict
 
 import numpy as np
 
@@ -11,13 +11,13 @@ from chemprop.utils import  makedirs, multitask_mean, timeit
 
 
 @timeit(logger_name=TRAIN_LOGGER_NAME)
-def train_only(args: TrainArgs) -> Tuple[float, float]:
+def train_only(args: TrainArgs) -> Dict[str, float]:
     """
     Parses Chemprop training arguments and trains a Chemprop model.
 
     :param args: A :class:`~chemprop.args.TrainArgs` object containing arguments for
                  loading data and training the Chemprop model.
-    :return: A dictionary mapping each metric in :code:`args.metrics` to a list of values for each task.
+    :return: A dictionary mapping each metric in :code:`args.metrics` to its average score.
     """
 
     info, args.seed, args.save_dir, data, logger = prepare_for_training(args)
@@ -34,12 +34,11 @@ def train_only(args: TrainArgs) -> Tuple[float, float]:
     else:
         model_scores = run_training(args, data, logger)
 
-    # Convert scores to numpy arrays
+    # Calculate the average score per metric (across tasks and models)
+    metric_to_score = {}
     for metric, scores in model_scores.items():
-        model_scores[metric] = np.array(scores)
-
-    # Determine mean and std score of main metric
-    avg_scores = multitask_mean(model_scores[args.metric], metric=args.metric)
-    mean_score, std_score = np.mean(avg_scores), np.std(avg_scores)
-
-    return mean_score, std_score
+        avg_multitask_score = multitask_mean(np.array(scores), metric)
+        avg_multitask_ensemble_score = np.mean(avg_multitask_score)
+        metric_to_score[metric] = avg_multitask_ensemble_score
+        
+    return metric_to_score
